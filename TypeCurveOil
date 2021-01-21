@@ -1,0 +1,54 @@
+## This script calculates the Type Curve of selected wells
+## Author: Carson Fricks
+## Date: 1/21/2021
+
+import pandas as pd
+import numpy as np
+from datetime import date
+from datetime import datetime
+from dateutil.relativedelta import relativedelta, MO
+import calendar
+
+wellheaders=pd.DataFrame(welldata)
+production=pd.DataFrame(productiondata)
+
+filtered_production=pd.DataFrame(columns=['API','OilProd','Date'])
+uniquewells=pd.DataFrame(columns=['API'])
+well_list=pd.DataFrame(columns=['API10','FirstProdMonth','PeakOilMonthNo','PeakOilMonth'])
+
+for x in range(len(wellheaders)):
+	uniquewells=uniquewells.append({'API':(wellheaders.loc[x,'API10'])},ignore_index=True)
+
+for x in range(len(uniquewells)):
+	well_list=well_list.append({'API10':(wellheaders.iloc[wellheaders[wellheaders['API10']==uniquewells.loc[x,'API']].index[0],0]), 'FirstProdMonth':(wellheaders.iloc[wellheaders[wellheaders['API10']==uniquewells.loc[x,'API']].index[0],1]), 'PeakOilMonthNo':(wellheaders.iloc[wellheaders[wellheaders['API10']==uniquewells.loc[x,'API']].index[0],2]),'PeakOilMonth': (0)},ignore_index=True)
+
+## Calculates the date at which peak oil production is reached
+for x in range(len(well_list)):
+	well_list.loc[x,'PeakOilMonth']=well_list.loc[x,'FirstProdMonth']+relativedelta(months=(-1+well_list.loc[x,"PeakOilMonthNo"]))
+
+## Filters Production data to start at peak month for selected wells
+enddate=date.today()
+data_list=[]
+for x in range(len(well_list)):
+	well_id=well_list.loc[x,'API10']
+	peakoildate=well_list.loc[x,'PeakOilMonth']
+	d=production[(production['API/UWI']==well_id) & (production['Monthly Production Date']>=peakoildate)]
+	data_list.append(d)
+
+filtered_production=pd.concat(data_list).reset_index(drop=True)
+
+## Calculates the production month number from the peak oil production date
+peak_list=[]
+for x in range(len(filtered_production)):
+	well=filtered_production.iloc[x,0]
+	peak=well_list.iloc[well_list[well_list['API10']==well].index[0],3]
+	peak_list.append(peak)
+peaklist=pd.DataFrame(peak_list, columns=['PeakOilMonth'])
+filtered_production=pd.concat([filtered_production, peaklist], axis=1)
+
+filtered_production['ProductionMonthNo']=((filtered_production['Monthly Production Date'])-(filtered_production['PeakOilMonth']))/np.timedelta64(1,'M')
+filtered_production['ProductionMonthNo']=filtered_production['ProductionMonthNo'].astype(int)
+
+## Assigns Arps' hyperbolic equation to a function named 'ARPSHYP'
+def ARPSHYP(t,b,qi,Di):
+	return qi*((1+(b*Di*t))**(1/b))
