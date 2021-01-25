@@ -8,24 +8,34 @@ from datetime import date
 from datetime import datetime
 from dateutil.relativedelta import relativedelta, MO
 import calendar
+import matplotlib.pyplot as plt
+import math
+from scipy.optimize import curve_fit
 
+## Section 1 ##
+## Import data from spotfire tables into script
 wellheaders=pd.DataFrame(welldata)
 production=pd.DataFrame(productiondata)
 
 filtered_production=pd.DataFrame(columns=['API','OilProd','Date'])
 uniquewells=pd.DataFrame(columns=['API'])
+well_count=pd.DataFrame(columns=['Month No','Count'])
 well_list=pd.DataFrame(columns=['API10','FirstProdMonth','PeakOilMonthNo','PeakOilMonth'])
 
+## Section 2 ##
+## Creating new DFs that show unique well numbers and info about peak oil production month
 for x in range(len(wellheaders)):
 	uniquewells=uniquewells.append({'API':(wellheaders.loc[x,'API10'])},ignore_index=True)
 
 for x in range(len(uniquewells)):
 	well_list=well_list.append({'API10':(wellheaders.iloc[wellheaders[wellheaders['API10']==uniquewells.loc[x,'API']].index[0],0]), 'FirstProdMonth':(wellheaders.iloc[wellheaders[wellheaders['API10']==uniquewells.loc[x,'API']].index[0],1]), 'PeakOilMonthNo':(wellheaders.iloc[wellheaders[wellheaders['API10']==uniquewells.loc[x,'API']].index[0],2]),'PeakOilMonth': (0)},ignore_index=True)
 
+## Section 3 ##
 ## Calculates the date at which peak oil production is reached
 for x in range(len(well_list)):
 	well_list.loc[x,'PeakOilMonth']=well_list.loc[x,'FirstProdMonth']+relativedelta(months=(-1+well_list.loc[x,"PeakOilMonthNo"]))
 
+## Section 4 ##
 ## Filters Production data to start at peak month for selected wells
 enddate=date.today()
 data_list=[]
@@ -37,7 +47,9 @@ for x in range(len(well_list)):
 
 filtered_production=pd.concat(data_list).reset_index(drop=True)
 
+## Section 5 ##
 ## Calculates the production month number from the peak oil production date
+
 peak_list=[]
 for x in range(len(filtered_production)):
 	well=filtered_production.iloc[x,0]
@@ -45,10 +57,75 @@ for x in range(len(filtered_production)):
 	peak_list.append(peak)
 peaklist=pd.DataFrame(peak_list, columns=['PeakOilMonth'])
 filtered_production=pd.concat([filtered_production, peaklist], axis=1)
+filtered_production.reset_index(drop=True)
+
+
 
 filtered_production['ProductionMonthNo']=((filtered_production['Monthly Production Date'])-(filtered_production['PeakOilMonth']))/np.timedelta64(1,'M')
+filtered_production['ProductionMonthNo']=filtered_production['ProductionMonthNo'].astype(float)
+filtered_production['ProductionMonthNo']=filtered_production['ProductionMonthNo'].round(0)
 filtered_production['ProductionMonthNo']=filtered_production['ProductionMonthNo'].astype(int)
 
+
+## Section 6 ##
+## Returns well count by Production Month
+
+
+wellcountlist=[]
+max_monthno=max(filtered_production['ProductionMonthNo'])+1
+wellcountlist=range(0,(max_monthno))
+data_list=[]
+for x in range(len(wellcountlist)):
+	d=[]
+	monthno=wellcountlist[x]
+	seriesObj=(filtered_production.apply(lambda t: True if t['ProductionMonthNo']==monthno else False, axis=1))
+	wellcount=len(seriesObj[seriesObj==True].index)
+	d=[monthno,wellcount]
+	well_count.loc[len(well_count)]=d
+
+## Section 7 ##
 ## Assigns Arps' hyperbolic equation to a function named 'ARPSHYP'
 def ARPSHYP(t,b,qi,Di):
-	return qi*((1+(b*Di*t))**(1/b))
+	return qi*((1+(b*Di*t))**(-1/b))
+
+
+xdata=filtered_production['ProductionMonthNo']
+ydata=filtered_production['Norm. Monthly Oil (5000\' LL)']
+
+popt, pcov=curve_fit(ARPSHYP, xdata, ydata,bounds=([min_b,0,0],[max_b,30000,0.99]))
+
+abandonment_q=100
+b=popt[0]
+qi=popt[1]
+Di=popt[2]
+
+t0=0
+De=Dmin+1
+x0=0
+delta_t=0.5
+while (De > Dmin):
+	if (x0==0):
+		q0=qi*((1+(b*Di*t0))**(-1/b))
+		t0=t0
+		De=Dmin+1
+		t1=t0+delta_t
+		x=1
+	else:
+		q1=qi*((1+(b*Di*t1))**(-1/b))
+		De=(q0-q1)/q0*12
+		if (De>Dmin):
+			t0=t1
+			q1=q0
+			t1=t0+delta_t
+		else:
+			print()
+abandonment_t=(math.log(qmin/q1)/(-Dmin))
+
+x_hyp=np.linspace(0,t0,100)
+y_hyp=qi*((1+(b*Di*x_hyp))**(-1/b))
+x_exp=np.linspace(t1,abandonment_t,100)
+y_exp=q1*(math.exp(-Dmin*x_exp))
+
+OilTypeCurve_hyp=pd.DataFrame({'Month': x_hyp,'Oil Production': y_hyp})
+OilTypeCurve_exp=pd.DataFrame({'Month': x_exp,'Oil Production': y_exp})
+OilTypeCurve=concat([OilTypeCurve_hyp,OilTypeCurve_exp],ignore_index=True)
