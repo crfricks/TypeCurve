@@ -100,32 +100,30 @@ qi=popt[1]
 Di=popt[2]
 
 t0=0
-De=Dmin+1
-x0=0
-delta_t=0.5
-while (De > Dmin):
-	if (x0==0):
+De=Dmin+0.01
+x=0
+delta_t=0.1
+while (De >= Dmin):
+	if x==0:
 		q0=qi*((1+(b*Di*t0))**(-1/b))
-		t0=t0
-		De=Dmin+1
 		t1=t0+delta_t
 		x=1
 	else:
 		q1=qi*((1+(b*Di*t1))**(-1/b))
-		De=(q0-q1)/q0*12
-		if (De>Dmin):
-			t0=t1
-			q1=q0
-			t1=t0+delta_t
-		else:
-			print()
+		De=(q0-q1)/(t0-t1)*12
+		t0=t1
+		q1=q0
+		t1=t0+delta_t
 abandonment_t=(math.log(qmin/q1)/(-Dmin))
 
-x_hyp=np.linspace(0,t0,100)
+x_hyp=np.linspace(0,t0,1000)
 y_hyp=qi*((1+(b*Di*x_hyp))**(-1/b))
 x_exp=np.linspace(t1,abandonment_t,100)
-y_exp=q1*(math.exp(-Dmin*x_exp))
+y_exp=[]
+for x in range(len(x_exp)):
+	y=q1*(math.exp(-Dmin*(x_exp[x]-t1)))
+	y_exp.append(y)
 
-OilTypeCurve_hyp=pd.DataFrame({'Month': x_hyp,'Oil Production': y_hyp})
+OilTypeCurve=pd.DataFrame({'Month': x_hyp,'Oil Production': y_hyp})
 OilTypeCurve_exp=pd.DataFrame({'Month': x_exp,'Oil Production': y_exp})
-OilTypeCurve=concat([OilTypeCurve_hyp,OilTypeCurve_exp],ignore_index=True)
+OilTypeCurve=pd.concat([OilTypeCurve_hyp,OilTypeCurve_exp],ignore_index=True)
